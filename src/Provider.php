@@ -5,6 +5,7 @@ namespace SocialiteProviders\SciStarter;
 use Laravel\Socialite\Two\ProviderInterface;
 use SocialiteProviders\Manager\OAuth2\AbstractProvider;
 use SocialiteProviders\Manager\OAuth2\User;
+use GuzzleHttp\ClientInterface;
 
 class Provider extends AbstractProvider implements ProviderInterface
 {
@@ -16,7 +17,7 @@ class Provider extends AbstractProvider implements ProviderInterface
     /**
      * {@inheritdoc}
      */
-    protected $scopes = ['basic'];
+    protected $scopes = ['login'];
 
     /**
      * {@inheritdoc}
@@ -39,7 +40,7 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     protected function getUserByToken($token)
     {
-        $response = $this->getHttpClient()->get('', [
+        $response = $this->getHttpClient()->get('https://scistarter.com/api/user_info', [
             'headers' => [
                 'Authorization' => 'Bearer '.$token,
             ],
@@ -53,7 +54,11 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     protected function mapUserToObject(array $user)
     {
-        return $user;
+        return (new User())->setRaw($user)->map([
+          'id' => $user['user_id'],
+          'profile_id' => $user['profile_id'],
+          'profile_url' => $user['url']
+        ]);
     }
 
     /**
@@ -61,8 +66,28 @@ class Provider extends AbstractProvider implements ProviderInterface
      */
     protected function getTokenFields($code)
     {
-        return array_merge(parent::getTokenFields($code), [
-            'grant_type' => 'authorization_code'
+        return [
+          'client_id' => $this->clientId,
+          'code' => $code,
+          'grant_type' => 'authorization_code'
+        ];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getAccessTokenResponse($code)
+    {
+        $postKey = (version_compare(ClientInterface::VERSION, '6') === 1) ? 'form_params' : 'body';
+
+        $response = $this->getHttpClient()->post($this->getTokenUrl(), [
+            'headers' => ['Accept' => 'application/json'],
+            $postKey => $this->getTokenFields($code),
+            'query' => [
+              'key' => $this->clientSecret // key instead of client_secret
+            ]
         ]);
+
+        return json_decode($response->getBody(), true);
     }
 }
